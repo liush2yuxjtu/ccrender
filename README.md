@@ -48,7 +48,7 @@ Proposed MCP tools and types: `contract/types.ts` (capability probe, `get_render
 ## Known gaps
 - MG now renders straight to PNG frames in one shared browser (0.045 s/frame, was 0.153 with ProRes). Picture compositing is the new bottleneck.
 - `bash tests/smoke.sh` checks MG frame counts, duration, audio after speech, manifest hash.
-- Drive download/upload written but not exercised with a real token. Downloads stream to disk and resume with HTTP Range.
+- Drive download/upload written but not exercised with a real token. Downloads stream to disk and resume with HTTP Range + If-Range, so a partial file is only extended while the remote ETag/Last-Modified still matches.
 - The Drive token is read from `CCRENDER_DRIVE_TOKEN`; `storage.drive.accessToken` in the bundle still works but is deprecated.
 - With `--budget-sec`, a run that already did work stops before audio+mux if less than ~0.3× film length is left, so the tail never overruns a tool-call limit.
 - `mg/index.jsx` is a stand-in for ChatCut's web renderer; swap it in so export == editor preview.

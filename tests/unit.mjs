@@ -7,37 +7,51 @@ import assert from 'node:assert/strict';
 import {download, atempoChain} from '../src/render.mjs';
 
 const body = Buffer.alloc(3 * 1024 * 1024, 7);
-let lastRange = null;
+const ETAG = '"v1"';
+let lastRange = null, lastIfRange = null;
 const srv = http.createServer((req, res) => {
-  lastRange = req.headers.range || null;
+  lastRange = req.headers.range || null; lastIfRange = req.headers['if-range'] || null;
   const m = /bytes=(\d+)-/.exec(lastRange || '');
-  if (!m) { res.writeHead(200, {'Content-Length': body.length}); return res.end(body); }
+  // RFC 9110: a Range with a non-matching If-Range gets the whole representation
+  if (!m || (lastIfRange && lastIfRange !== ETAG)) { res.writeHead(200, {'Content-Length': body.length, ETag: ETAG}); return res.end(body); }
   const from = +m[1];
   if (from >= body.length) { res.writeHead(416, {'Content-Range': `bytes */${body.length}`}); return res.end(); }
-  res.writeHead(206, {'Content-Range': `bytes ${from}-${body.length - 1}/${body.length}`}); res.end(body.subarray(from));
+  res.writeHead(206, {'Content-Range': `bytes ${from}-${body.length - 1}/${body.length}`, ETag: ETAG}); res.end(body.subarray(from));
 });
 await new Promise((r) => srv.listen(0, r));
 const url = `http://127.0.0.1:${srv.address().port}/f`;
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccr-'));
+const partial = (name, bytes, validator) => {
+  const f = path.join(dir, name);
+  fs.writeFileSync(f + '.part', bytes);
+  if (validator) fs.writeFileSync(f + '.part.json', JSON.stringify({validator}));
+  return f;
+};
+const done = (f) => fs.readFileSync(f).equals(body) && !fs.existsSync(f + '.part') && !fs.existsSync(f + '.part.json');
 try {
   const a = path.join(dir, 'a.bin');
   await download(url, a);
-  assert.ok(fs.readFileSync(a).equals(body)); assert.equal(lastRange, null);
+  assert.ok(done(a)); assert.equal(lastRange, null);
   console.log('PASS download full');
-  const b = path.join(dir, 'b.bin');
-  fs.writeFileSync(b + '.part', body.subarray(0, 1000));
+  const b = partial('b.bin', body.subarray(0, 1000), ETAG);
   await download(url, b);
-  assert.equal(lastRange, 'bytes=1000-'); assert.ok(fs.readFileSync(b).equals(body));
-  console.log('PASS download resumes with Range');
-  const c = path.join(dir, 'c.bin');
-  fs.writeFileSync(c + '.part', body);
+  assert.equal(lastRange, 'bytes=1000-'); assert.equal(lastIfRange, ETAG); assert.ok(done(b));
+  console.log('PASS download resumes with Range + If-Range');
+  const c = partial('c.bin', Buffer.alloc(1000, 9), '"v0"');
   await download(url, c);
-  assert.ok(fs.readFileSync(c).equals(body));
-  console.log('PASS download complete .part (416)');
-  const d = path.join(dir, 'd.bin');
-  fs.writeFileSync(d + '.part', Buffer.concat([body, Buffer.alloc(10)]));
+  assert.ok(done(c));
+  console.log('PASS remote changed (If-Range mismatch) replaces the stale prefix');
+  const d = partial('d.bin', Buffer.alloc(1000, 9));
   await download(url, d);
-  assert.ok(fs.readFileSync(d).equals(body)); assert.ok(!fs.existsSync(d + '.part'));
+  assert.equal(lastRange, null); assert.ok(done(d));
+  console.log('PASS .part without validator restarts');
+  const e = partial('e.bin', body, ETAG);
+  await download(url, e);
+  assert.ok(done(e));
+  console.log('PASS download complete .part (416)');
+  const g = partial('g.bin', Buffer.concat([body, Buffer.alloc(10)]), ETAG);
+  await download(url, g);
+  assert.ok(done(g));
   console.log('PASS oversized .part restarts');
 } finally { srv.close(); fs.rmSync(dir, {recursive: true, force: true}); }
 

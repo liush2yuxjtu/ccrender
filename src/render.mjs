@@ -86,20 +86,33 @@ export function loadBundle(file) {
 // ---------- 1. assets: file / https / drive -> local cache ----------
 // Streams to <dest>.part (raw footage can be larger than the sandbox's RAM) and resumes
 // a partial file with a Range request after a reclaimed sandbox or an exit-75 re-run.
+// The .part only resumes when <dest>.part.json holds the validator (strong ETag or
+// Last-Modified) of the response that started it; If-Range makes the server send the
+// whole file instead of a suffix if the remote file changed since.
 export async function download(url, dest, headers = {}) {
-  const tmp = dest + '.part';
-  const have = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0;
-  const r = await fetch(url, {headers: have ? {...headers, Range: `bytes=${have}-`} : headers});
+  const tmp = dest + '.part', meta = tmp + '.json';
+  let have = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0;
+  let validator = null;
+  try { validator = JSON.parse(fs.readFileSync(meta, 'utf8')).validator; } catch {}
+  if (have && !validator) { fs.rmSync(tmp, {force: true}); have = 0; } // can't prove these bytes match the remote file
+  const r = await fetch(url, {headers: have ? {...headers, Range: `bytes=${have}-`, 'If-Range': validator} : headers});
   if (r.status === 416 && have) {
     const total = Number(/\/(\d+)$/.exec(r.headers.get('content-range') || '')?.[1]);
-    if (total === have) { fs.renameSync(tmp, dest); return; } // .part was already complete
-    fs.rmSync(tmp, {force: true}); // stale or oversized .part: start over
+    if (total === have) { fs.renameSync(tmp, dest); fs.rmSync(meta, {force: true}); return; } // .part was already complete
+    fs.rmSync(tmp, {force: true}); fs.rmSync(meta, {force: true}); // stale or oversized .part: start over
     return download(url, dest, headers);
   }
   if (!r.ok) throw new Error(`download ${r.status} ${url}`);
   const append = have > 0 && r.status === 206;
+  if (!append) {
+    const etag = r.headers.get('etag');
+    const v = etag && !etag.startsWith('W/') ? etag : r.headers.get('last-modified');
+    if (v) fs.writeFileSync(meta, JSON.stringify({validator: v}));
+    else fs.rmSync(meta, {force: true}); // no validator: this download can't be resumed safely
+  }
   await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(tmp, {flags: append ? 'a' : 'w'}));
   fs.renameSync(tmp, dest);
+  fs.rmSync(meta, {force: true});
 }
 // Drive token comes from the environment, never from a file on disk; the bundle field is a deprecated fallback.
 const driveToken = (b) => process.env.CCRENDER_DRIVE_TOKEN || b.storage?.drive?.accessToken || null;

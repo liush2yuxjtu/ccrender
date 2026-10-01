@@ -14,7 +14,7 @@ bash tests/verify.sh
 
 `tests/verify.sh` runs, in order:
 
-1. `npm test`: `tests/unit.mjs` (streamed/resumed download, 416 handling, atempo chain) and `tests/smoke.sh` (renders `examples/demo.bundle.json`, checks MG frame counts, 30 s duration, music after speech, manifest sha256).
+1. `npm test`: `tests/unit.mjs` (streamed download, Range + If-Range resume, changed-remote and 416 handling, atempo chain) and `tests/smoke.sh` (renders `examples/demo.bundle.json`, checks MG frame counts, 30 s duration, music after speech, manifest sha256).
 2. CLI behaviour: `--budget-sec 12` loops through exit 75 to exit 0, `frames` leaves `runs` unchanged, bad flags exit 2, upload without a token exits 1.
 3. Live Google Drive, only when these env vars are set:
    - `CCRENDER_DRIVE_TOKEN`: OAuth access token with `drive.readonly` + `drive.file` scopes
