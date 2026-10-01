@@ -90,7 +90,12 @@ export async function download(url, dest, headers = {}) {
   const tmp = dest + '.part';
   const have = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0;
   const r = await fetch(url, {headers: have ? {...headers, Range: `bytes=${have}-`} : headers});
-  if (r.status === 416 && have) { fs.renameSync(tmp, dest); return; } // .part was already complete
+  if (r.status === 416 && have) {
+    const total = Number(/\/(\d+)$/.exec(r.headers.get('content-range') || '')?.[1]);
+    if (total === have) { fs.renameSync(tmp, dest); return; } // .part was already complete
+    fs.rmSync(tmp, {force: true}); // stale or oversized .part: start over
+    return download(url, dest, headers);
+  }
   if (!r.ok) throw new Error(`download ${r.status} ${url}`);
   const append = have > 0 && r.status === 206;
   await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(tmp, {flags: append ? 'a' : 'w'}));

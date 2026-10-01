@@ -13,7 +13,7 @@ const srv = http.createServer((req, res) => {
   const m = /bytes=(\d+)-/.exec(lastRange || '');
   if (!m) { res.writeHead(200, {'Content-Length': body.length}); return res.end(body); }
   const from = +m[1];
-  if (from >= body.length) { res.writeHead(416); return res.end(); }
+  if (from >= body.length) { res.writeHead(416, {'Content-Range': `bytes */${body.length}`}); return res.end(); }
   res.writeHead(206, {'Content-Range': `bytes ${from}-${body.length - 1}/${body.length}`}); res.end(body.subarray(from));
 });
 await new Promise((r) => srv.listen(0, r));
@@ -34,6 +34,11 @@ try {
   await download(url, c);
   assert.ok(fs.readFileSync(c).equals(body));
   console.log('PASS download complete .part (416)');
+  const d = path.join(dir, 'd.bin');
+  fs.writeFileSync(d + '.part', Buffer.concat([body, Buffer.alloc(10)]));
+  await download(url, d);
+  assert.ok(fs.readFileSync(d).equals(body)); assert.ok(!fs.existsSync(d + '.part'));
+  console.log('PASS oversized .part restarts');
 } finally { srv.close(); fs.rmSync(dir, {recursive: true, force: true}); }
 
 const prod = (s) => s.split(',').map((x) => +x.split('=')[1]).reduce((a, b) => a * b, 1);

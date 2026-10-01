@@ -9,6 +9,12 @@ import {parseArgs} from 'node:util';
 import {exportBundle, proofFrames, uploadToDrive, EXIT_RESUMABLE} from './render.mjs';
 
 const str = {type: 'string'};
+const num = (name, raw) => {
+  if (raw === undefined) return undefined;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v <= 0) throw new Error(`--${name} must be a positive number, got '${raw}'`);
+  return v;
+};
 let cmd, target, opt;
 try {
   const {values, positionals} = parseArgs({
@@ -16,6 +22,7 @@ try {
     options: {out: str, work: str, 'budget-sec': str, 'segment-sec': str, crf: str, preset: str, at: str, scale: str, token: str, folder: str},
   });
   [cmd, target] = positionals; opt = values;
+  for (const k of ['budget-sec', 'segment-sec', 'scale']) opt[k] = num(k, opt[k]);
 } catch (e) {
   console.error('ccrender:', e.message); process.exit(2);
 }
@@ -23,13 +30,13 @@ try {
 try {
   if (cmd === 'export') {
     const r = await exportBundle(target, {
-      out: opt.out, work: opt.work, budgetSec: opt['budget-sec'] ? +opt['budget-sec'] : Infinity,
-      segmentSec: opt['segment-sec'] ? +opt['segment-sec'] : 10, crf: opt.crf, preset: opt.preset,
+      out: opt.out, work: opt.work, budgetSec: opt['budget-sec'] ?? Infinity,
+      segmentSec: opt['segment-sec'] ?? 10, crf: opt.crf, preset: opt.preset,
     });
     console.log(JSON.stringify(r.status === 'done' ? {status: 'done', manifest: r.manifest} : r, null, 2));
     process.exit(r.status === 'done' ? 0 : EXIT_RESUMABLE);
   } else if (cmd === 'frames') {
-    const r = await proofFrames(target, String(opt.at || '0').split(',').map(Number), {scale: opt.scale ? +opt.scale : 0.5, out: opt.out});
+    const r = await proofFrames(target, String(opt.at || '0').split(',').map(Number), {scale: opt.scale ?? 0.5, out: opt.out});
     console.log(JSON.stringify(r, null, 2));
   } else if (cmd === 'upload') {
     if (opt.token) console.warn('ccrender: --token is visible in the process list; prefer CCRENDER_DRIVE_TOKEN');
