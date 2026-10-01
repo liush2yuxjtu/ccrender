@@ -84,6 +84,14 @@ export function loadBundle(file) {
 }
 
 // ---------- 1. assets: file / https / drive -> local cache ----------
+// If-Range needs a strong validator (RFC 9110 13.1.5): a strong ETag, or with no ETag at all a
+// Last-Modified at least one second before the response Date. A weak ETag disqualifies both.
+export function strongValidator(headers) {
+  const etag = headers.get('etag');
+  if (etag) return etag.startsWith('W/') ? null : etag;
+  const lm = Date.parse(headers.get('last-modified') || ''), date = Date.parse(headers.get('date') || '');
+  return lm && date && date - lm >= 1000 ? headers.get('last-modified') : null;
+}
 // Streams to <dest>.part (raw footage can be larger than the sandbox's RAM) and resumes
 // a partial file with a Range request after a reclaimed sandbox or an exit-75 re-run.
 // The .part only resumes when <dest>.part.json holds the validator (strong ETag or
@@ -105,10 +113,10 @@ export async function download(url, dest, headers = {}) {
   if (!r.ok) throw new Error(`download ${r.status} ${url}`);
   const append = have > 0 && r.status === 206;
   if (!append) {
-    const etag = r.headers.get('etag');
-    const v = etag && !etag.startsWith('W/') ? etag : r.headers.get('last-modified');
-    if (v) fs.writeFileSync(meta, JSON.stringify({validator: v}));
-    else fs.rmSync(meta, {force: true}); // no validator: this download can't be resumed safely
+    // drop the old bytes first so a crash here never pairs the new validator with a stale prefix
+    fs.rmSync(tmp, {force: true}); fs.rmSync(meta, {force: true});
+    const v = strongValidator(r.headers);
+    if (v) fs.writeFileSync(meta, JSON.stringify({validator: v})); // else: this download can't be resumed safely
   }
   await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(tmp, {flags: append ? 'a' : 'w'}));
   fs.renameSync(tmp, dest);

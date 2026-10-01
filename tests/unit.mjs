@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import assert from 'node:assert/strict';
-import {download, atempoChain} from '../src/render.mjs';
+import {download, atempoChain, strongValidator} from '../src/render.mjs';
 
 const body = Buffer.alloc(3 * 1024 * 1024, 7);
 const ETAG = '"v1"';
@@ -54,6 +54,15 @@ try {
   assert.ok(done(g));
   console.log('PASS oversized .part restarts');
 } finally { srv.close(); fs.rmSync(dir, {recursive: true, force: true}); }
+
+const H = (o) => new Headers(o);
+const t0 = 'Wed, 01 Oct 2026 10:00:00 GMT', t1 = 'Wed, 01 Oct 2026 10:00:00 GMT', t2 = 'Wed, 01 Oct 2026 11:00:00 GMT';
+assert.equal(strongValidator(H({etag: '"a"'})), '"a"');
+assert.equal(strongValidator(H({etag: 'W/"a"', 'last-modified': t0, date: t2})), null);
+assert.equal(strongValidator(H({'last-modified': t0, date: t2})), t0);
+assert.equal(strongValidator(H({'last-modified': t0, date: t1})), null);
+assert.equal(strongValidator(H({})), null);
+console.log('PASS strong validator selection (weak ETag, fresh Last-Modified)');
 
 const prod = (s) => s.split(',').map((x) => +x.split('=')[1]).reduce((a, b) => a * b, 1);
 for (const sp of [0.25, 0.5, 1.5, 2, 3, 8]) {
