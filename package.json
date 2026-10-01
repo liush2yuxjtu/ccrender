@@ -6,7 +6,7 @@
   "bin": { "ccrender": "src/cli.mjs" },
   "scripts": {
     "fixtures": "bash fixtures/make.sh",
-    "test": "bash fixtures/make.sh && bash tests/smoke.sh"
+    "test": "node tests/unit.mjs && bash fixtures/make.sh && bash tests/smoke.sh"
   },
   "dependencies": {
     "@remotion/bundler": "^4",

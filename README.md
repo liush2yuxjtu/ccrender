@@ -2,15 +2,15 @@
 
 > Prototype / design proposal. Not affiliated with or endorsed by ChatCut Inc. Tool names of the hosted ChatCut MCP were taken from the public [ChatCut-Inc/agent-plugin](https://github.com/ChatCut-Inc/agent-plugin) skills.
 
-Design proposal (zh-CN): [`docs/DESIGN.md`](docs/DESIGN.md)
+Design proposal (zh-CN): [`docs/DESIGN.md`](docs/DESIGN.md) · picture explainer: [`docs/eli5.html`](docs/eli5.html) ([live artifact](https://claude.ai/artifact/7yDV2CbF65aH8VfBKNpBS1))
 
 Goal: move export / proof-frame / transcription compute off ChatCut's cloud and into the
 user's agent sandbox (Cowork, Claude Code, Codex). Raw media lives in the user's Google Drive.
 
 ## Flow
 ```
-ChatCut MCP  get_render_bundle ──► bundle.json  (timeline snapshot + asset refs + short-lived Drive token)
-sandbox      ccrender export bundle.json        (ffmpeg base + Remotion MG layers, checkpointed)
+ChatCut MCP  get_render_bundle ──► bundle.json  (timeline snapshot + asset refs) + short-lived Drive token
+sandbox      CCRENDER_DRIVE_TOKEN=… ccrender export bundle.json   (ffmpeg base + Remotion MG layers, checkpointed)
 sandbox      ccrender upload out/<id>.mp4       (resumable upload to user's Drive)
 ChatCut MCP  register_export(out/export-manifest.json)
 ```
@@ -24,7 +24,7 @@ npm i && npm test        # makes synthetic fixtures, renders the demo, runs 5 ch
 ```sh
 node src/cli.mjs export examples/demo.bundle.json [--budget-sec 480]   # exit 75 = re-run to resume
 node src/cli.mjs frames examples/demo.bundle.json --at 1.5,5,12        # agent self-check frames
-node src/cli.mjs upload out/x.mp4 --token <drive token> --folder <id>   # untested without real OAuth
+CCRENDER_DRIVE_TOKEN=<token> node src/cli.mjs upload out/x.mp4 --folder <id>   # untested without real OAuth
 python3 src/transcribe.py media.mp4 --model base > cues.json            # pip install faster-whisper
 ```
 
@@ -48,6 +48,8 @@ Proposed MCP tools and types: `contract/types.ts` (capability probe, `get_render
 ## Known gaps
 - MG now renders straight to PNG frames in one shared browser (0.045 s/frame, was 0.153 with ProRes). Picture compositing is the new bottleneck.
 - `bash tests/smoke.sh` checks MG frame counts, duration, audio after speech, manifest hash.
-- Drive download/upload written but not exercised with a real token.
+- Drive download/upload written but not exercised with a real token. Downloads stream to disk and resume with HTTP Range.
+- The Drive token is read from `CCRENDER_DRIVE_TOKEN`; `storage.drive.accessToken` in the bundle still works but is deprecated.
+- With `--budget-sec`, a run that already did work stops before audio+mux if less than ~0.3× film length is left, so the tail never overruns a tool-call limit.
 - `mg/index.jsx` is a stand-in for ChatCut's web renderer; swap it in so export == editor preview.
 - No transitions / color / speed-ramped audio yet.

@@ -9,6 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawn} from 'node:child_process';
+import {Readable} from 'node:stream';
+import {pipeline} from 'node:stream/promises';
 import {fileURLToPath} from 'node:url';
 
 export const RENDERER = {name: 'ccrender', version: '0.2.0'};
@@ -49,12 +51,12 @@ async function ffprobeJson(file) {
 
 // ---------- state / checkpoints ----------
 class State {
-  constructor(work, bundleHash) {
+  constructor(work, bundleHash, {countRun = true} = {}) {
     this.file = path.join(work, 'state.json');
     let s = null;
     try { s = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch {}
     if (!s || s.bundleHash !== bundleHash) s = {bundleHash, done: {}, timings: {}, runs: 0};
-    s.runs += 1;
+    if (countRun) s.runs += 1; // proof frames don't count as export invocations
     this.s = s; this.save();
   }
   isDone(k) { return !!this.s.done[k]; }
@@ -69,6 +71,12 @@ export function loadBundle(file) {
   if (!String(b.version || '').startsWith('render-bundle/')) throw new Error('not a render bundle');
   const t = b.timeline;
   for (const k of ['fps', 'width', 'height', 'durationFrames']) if (!(t[k] > 0)) throw new Error('timeline.' + k + ' missing');
+  for (const tr of b.tracks) for (const it of tr.items || []) {
+    if (it.speed != null && !(it.speed > 0)) throw new Error(`item ${it.id}: speed must be > 0`);
+  }
+  if (b.storage?.drive?.accessToken) {
+    console.warn('ccrender: storage.drive.accessToken in the bundle is deprecated; pass it via CCRENDER_DRIVE_TOKEN so it never sits on disk');
+  }
   b._dir = path.dirname(path.resolve(file));
   b._hash = sha256Str(JSON.stringify({...b, _dir: undefined, storage: undefined}));
   b._stateKey = b._hash + ':' + CODE_HASH;
@@ -76,13 +84,20 @@ export function loadBundle(file) {
 }
 
 // ---------- 1. assets: file / https / drive -> local cache ----------
-async function download(url, dest, headers = {}) {
-  const r = await fetch(url, {headers});
-  if (!r.ok) throw new Error(`download ${r.status} ${url}`);
+// Streams to <dest>.part (raw footage can be larger than the sandbox's RAM) and resumes
+// a partial file with a Range request after a reclaimed sandbox or an exit-75 re-run.
+export async function download(url, dest, headers = {}) {
   const tmp = dest + '.part';
-  await fs.promises.writeFile(tmp, Buffer.from(await r.arrayBuffer()));
+  const have = fs.existsSync(tmp) ? fs.statSync(tmp).size : 0;
+  const r = await fetch(url, {headers: have ? {...headers, Range: `bytes=${have}-`} : headers});
+  if (r.status === 416 && have) { fs.renameSync(tmp, dest); return; } // .part was already complete
+  if (!r.ok) throw new Error(`download ${r.status} ${url}`);
+  const append = have > 0 && r.status === 206;
+  await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(tmp, {flags: append ? 'a' : 'w'}));
   fs.renameSync(tmp, dest);
 }
+// Drive token comes from the environment, never from a file on disk; the bundle field is a deprecated fallback.
+const driveToken = (b) => process.env.CCRENDER_DRIVE_TOKEN || b.storage?.drive?.accessToken || null;
 async function resolveAssets(b, work, st, log) {
   const cache = path.join(work, 'assets');
   fs.mkdirSync(cache, {recursive: true});
@@ -93,8 +108,8 @@ async function resolveAssets(b, work, st, log) {
     if (src.startsWith('drive://')) {
       local = path.join(cache, id + (a.ext || ''));
       if (!fs.existsSync(local)) {
-        const tok = b.storage?.drive?.accessToken;
-        if (!tok) throw new Error(`asset ${id}: drive source needs storage.drive.accessToken`);
+        const tok = driveToken(b);
+        if (!tok) throw new Error(`asset ${id}: drive source needs CCRENDER_DRIVE_TOKEN`);
         log(`  pull drive ${src}`);
         await download(`https://www.googleapis.com/drive/v3/files/${src.slice(8)}?alt=media`, local, {Authorization: `Bearer ${tok}`});
       }
@@ -294,6 +309,14 @@ async function renderSegments(b, work, st, budget, opt, log) {
 }
 
 // ---------- 4. audio: one pass, role-based ducking (anchor = speech, follower = music) ----------
+// older ffmpeg only accepts atempo in [0.5, 2]; chain factors to reach any speed
+export function atempoChain(speed) {
+  const f = [];
+  while (speed > 2) { f.push(2); speed /= 2; }
+  while (speed < 0.5) { f.push(0.5); speed /= 0.5; }
+  f.push(speed);
+  return f.map((x) => `atempo=${+x.toFixed(6)}`).join(',');
+}
 async function renderAudio(b, work, st, log) {
   const out = path.join(work, 'audio.m4a');
   if (st.isDone('audio') && fs.existsSync(out)) return out;
@@ -309,7 +332,7 @@ async function renderAudio(b, work, st, log) {
     const vol = (it.volume ?? 1) * (tr.volume ?? 1);
     const fi = (it.audioFadeIn || 0) / fps, fo = (it.audioFadeOut || 0) / fps;
     let c = `[${n}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo`;
-    if (speed !== 1) c += `,atempo=${speed}`;
+    if (speed !== 1) c += ',' + atempoChain(speed);
     c += `,volume=${vol}`;
     if (fi) c += `,afade=t=in:st=0:d=${fi}`;
     if (fo) c += `,afade=t=out:st=${(len - fo).toFixed(3)}:d=${fo}`;
@@ -398,13 +421,23 @@ export async function exportBundle(bundlePath, {work, out, budgetSec = Infinity,
   fs.mkdirSync(work, {recursive: true});
   const st = new State(work, b._stateKey);
   const started = Date.now();
-  const budget = {exceeded: () => (Date.now() - started) / 1000 > budgetSec};
+  const budget = {exceeded: () => (Date.now() - started) / 1000 > budgetSec, remaining: () => budgetSec - (Date.now() - started) / 1000};
+  // Audio + mux + preview are not interruptible. If this run already did work and the rest of the
+  // budget can't cover them (~27 s for a 120 s film measured, so ~0.3x film length), stop now and let
+  // the next run, which has nothing else to do, spend its whole budget on them.
+  const tailSec = Math.max(10, 0.3 * b.timeline.durationFrames / b.timeline.fps);
+  const runStartDone = Object.keys(st.s.done).length;
   log(`ccrender ${RENDERER.version} · ${b.renderId} · ${b.timeline.width}x${b.timeline.height}@${b.timeline.fps} · ${(b.timeline.durationFrames / b.timeline.fps).toFixed(1)}s · run #${st.s.runs}`);
   const T = async (k, fn) => { const t0 = Date.now(); const r = await fn(); st.time('wall_' + k, (Date.now() - t0) / 1000); return r; };
   await T('assets', () => resolveAssets(b, work, st, log));
   if (!(await T('mg', () => renderMotion(b, work, st, budget, log)))) return {status: 'resumable', work};
   const {done, segs} = await T('picture', () => renderSegments(b, work, st, budget, {segmentSec, crf, preset}, log));
   if (!done) return {status: 'resumable', work};
+  const tailDone = st.isDone('audio') && st.isDone('mux') && st.isDone('preview');
+  if (!tailDone && Object.keys(st.s.done).length > runStartDone && budget.remaining() < tailSec) {
+    log(`  ${budget.remaining().toFixed(0)}s left, audio+mux needs ~${tailSec.toFixed(0)}s: stopping, re-run to finish`);
+    return {status: 'resumable', work};
+  }
   const audio = await renderAudio(b, work, st, log);
   const manifest = await finalize(b, work, st, segs, audio, out, log);
   return {status: 'done', manifest, out};
@@ -416,7 +449,7 @@ export async function proofFrames(bundlePath, seconds, {work, out, scale = 0.5, 
   work = path.resolve(work || path.join(path.dirname(bundlePath), '.ccrender', b.renderId || 'job'));
   out = path.resolve(out || path.join(path.dirname(bundlePath), 'out', 'frames'));
   fs.mkdirSync(work, {recursive: true}); fs.mkdirSync(out, {recursive: true});
-  const st = new State(work, b._stateKey);
+  const st = new State(work, b._stateKey, {countRun: false});
   await resolveAssets(b, work, st, () => {});
   await renderMotion(b, work, st, {exceeded: () => false}, log);
   const files = [];
