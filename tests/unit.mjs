@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import assert from 'node:assert/strict';
-import {download, atempoChain, strongValidator} from '../src/render.mjs';
+import {download, atempoChain, strongValidator, loadBundle} from '../src/render.mjs';
 
 const body = Buffer.alloc(3 * 1024 * 1024, 7);
 const ETAG = '"v1"';
@@ -70,4 +70,9 @@ for (const sp of [0.25, 0.5, 1.5, 2, 3, 8]) {
   assert.ok(ch.split(',').every((x) => { const v = +x.split('=')[1]; return v >= 0.5 && v <= 2; }), ch);
   assert.ok(Math.abs(prod(ch) - sp) < 1e-6, ch);
 }
-console.log('PASS atempo chain in [0.5, 2]');
+for (const bad of [Infinity, 0, -1, NaN]) assert.throws(() => atempoChain(bad));
+const bundle = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ccr-')), 'b.json');
+fs.writeFileSync(bundle, '{"version":"render-bundle/0.1","timeline":{"fps":30,"width":64,"height":64,"durationFrames":30},"assets":{},"tracks":[{"id":"V","kind":"video","items":[{"id":"x","asset":"a","start":0,"duration":30,"speed":1e400}]}]}');
+assert.throws(() => loadBundle(bundle), /finite/);
+fs.rmSync(path.dirname(bundle), {recursive: true, force: true});
+console.log('PASS atempo chain in [0.5, 2]; non-finite speeds rejected');

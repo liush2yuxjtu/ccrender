@@ -72,7 +72,7 @@ export function loadBundle(file) {
   const t = b.timeline;
   for (const k of ['fps', 'width', 'height', 'durationFrames']) if (!(t[k] > 0)) throw new Error('timeline.' + k + ' missing');
   for (const tr of b.tracks) for (const it of tr.items || []) {
-    if (it.speed != null && !(it.speed > 0)) throw new Error(`item ${it.id}: speed must be > 0`);
+    if (it.speed != null && !(Number.isFinite(it.speed) && it.speed > 0)) throw new Error(`item ${it.id}: speed must be a finite number > 0`);
   }
   if (b.storage?.drive?.accessToken) {
     console.warn('ccrender: storage.drive.accessToken in the bundle is deprecated; pass it via CCRENDER_DRIVE_TOKEN so it never sits on disk');
@@ -337,6 +337,7 @@ async function renderSegments(b, work, st, budget, opt, log) {
 // ---------- 4. audio: one pass, role-based ducking (anchor = speech, follower = music) ----------
 // older ffmpeg only accepts atempo in [0.5, 2]; chain factors to reach any speed
 export function atempoChain(speed) {
+  if (!(Number.isFinite(speed) && speed > 0)) throw new Error(`atempo: bad speed ${speed}`); // Infinity would loop forever
   const f = [];
   while (speed > 2) { f.push(2); speed /= 2; }
   while (speed < 0.5) { f.push(0.5); speed /= 0.5; }
