@@ -1,0 +1,1 @@
+Hi, I am testing a new export path for ChatCut. Instead of rendering this video in our cloud, the agent renders it inside its own sandbox. The raw footage lives in the user's Google Drive. When the render is done, the agent uploads the final file back to Drive, and tells ChatCut where it is. This saves us money on every single export.

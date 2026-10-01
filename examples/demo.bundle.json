@@ -1,0 +1,219 @@
+{
+  "version": "render-bundle/0.1",
+  "renderId": "rnd_demo_001",
+  "projectId": "prj_demo",
+  "timelineId": "tl_main",
+  "timeline": {
+    "fps": 30,
+    "width": 1920,
+    "height": 1080,
+    "durationFrames": 900
+  },
+  "renderer": {
+    "name": "ccrender",
+    "version": "0.2.0"
+  },
+  "assets": {
+    "a_roll": {
+      "type": "video",
+      "src": "../fixtures/a_roll.mp4"
+    },
+    "b_roll": {
+      "type": "video",
+      "src": "../fixtures/b_roll.mp4"
+    },
+    "music": {
+      "type": "audio",
+      "src": "../fixtures/music.m4a"
+    },
+    "logo": {
+      "type": "image",
+      "src": "../fixtures/logo.png"
+    }
+  },
+  "tracks": [
+    {
+      "id": "V1",
+      "kind": "video",
+      "audioRole": "anchor",
+      "items": [
+        {
+          "id": "v1_a",
+          "asset": "a_roll",
+          "start": 0,
+          "duration": 712,
+          "sourceStart": 0
+        },
+        {
+          "id": "v1_end",
+          "asset": "logo",
+          "start": 712,
+          "duration": 188,
+          "rect": {
+            "x": 0.3125,
+            "y": 0.4,
+            "w": 0.375,
+            "h": 0.125
+          },
+          "fadeIn": 12
+        }
+      ]
+    },
+    {
+      "id": "V2",
+      "kind": "video",
+      "items": [
+        {
+          "id": "v2_broll",
+          "asset": "b_roll",
+          "start": 300,
+          "duration": 180,
+          "sourceStart": 30,
+          "audio": false,
+          "rect": {
+            "x": 0.62,
+            "y": 0.06,
+            "w": 0.34,
+            "h": 0.34
+          },
+          "fadeIn": 10,
+          "fadeOut": 10
+        }
+      ]
+    },
+    {
+      "id": "MG1",
+      "kind": "motion",
+      "items": [
+        {
+          "id": "mg_title",
+          "component": "TitleCard",
+          "start": 0,
+          "duration": 90,
+          "props": {
+            "text": "本地出片测试",
+            "kicker": "CHATCUT · AGENT SANDBOX"
+          }
+        },
+        {
+          "id": "mg_lower",
+          "component": "LowerThird",
+          "start": 120,
+          "duration": 150,
+          "props": {
+            "title": "Demo Speaker",
+            "subtitle": "渲染在用户沙箱里完成"
+          }
+        }
+      ]
+    },
+    {
+      "id": "A1",
+      "kind": "audio",
+      "role": "follower",
+      "volume": 0.7,
+      "items": [
+        {
+          "id": "a_music",
+          "asset": "music",
+          "start": 0,
+          "duration": 900,
+          "audioFadeIn": 15,
+          "audioFadeOut": 60
+        }
+      ]
+    },
+    {
+      "id": "C1",
+      "kind": "captions",
+      "style": {
+        "fontSize": 54,
+        "marginV": 60
+      },
+      "cues": [
+        {
+          "start": 0,
+          "end": 61,
+          "text": "Hi, I'm testing a new export"
+        },
+        {
+          "start": 61,
+          "end": 102,
+          "text": "path for ChatCut."
+        },
+        {
+          "start": 117,
+          "end": 167,
+          "text": "Instead of rendering this video"
+        },
+        {
+          "start": 167,
+          "end": 232,
+          "text": "in our cloud, the agent renders"
+        },
+        {
+          "start": 232,
+          "end": 281,
+          "text": "it inside its own sandbox."
+        },
+        {
+          "start": 302,
+          "end": 345,
+          "text": "The raw footage lives in the"
+        },
+        {
+          "start": 345,
+          "end": 377,
+          "text": "user's Google Drive."
+        },
+        {
+          "start": 393,
+          "end": 446,
+          "text": "When the render is done, the"
+        },
+        {
+          "start": 446,
+          "end": 498,
+          "text": "agent uploads the final file"
+        },
+        {
+          "start": 498,
+          "end": 578,
+          "text": "back to Drive and tells ChatCut"
+        },
+        {
+          "start": 578,
+          "end": 603,
+          "text": "where it is."
+        },
+        {
+          "start": 619,
+          "end": 668,
+          "text": "This saves us money on every"
+        },
+        {
+          "start": 668,
+          "end": 697,
+          "text": "single export."
+        }
+      ]
+    }
+  ],
+  "audio": {
+    "ducking": {
+      "threshold": 0.02,
+      "ratio": 10
+    }
+  },
+  "output": {
+    "format": "mp4",
+    "codec": "h264"
+  },
+  "storage": {
+    "inputs": "local",
+    "drive": {
+      "accessToken": null,
+      "folderId": null
+    }
+  }
+}

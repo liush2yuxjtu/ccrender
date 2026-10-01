@@ -1,0 +1,8 @@
+node_modules/
+examples/.ccrender/
+examples/out*/
+fixtures/*.mp4
+fixtures/*.m4a
+fixtures/*.wav
+fixtures/*.png
+*.log

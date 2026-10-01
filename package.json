@@ -1,0 +1,21 @@
+{
+  "name": "ccrender",
+  "version": "0.2.0",
+  "description": "Render a ChatCut-style timeline bundle inside the agent's own sandbox (ffmpeg base + Remotion motion layers, resumable).",
+  "type": "module",
+  "bin": { "ccrender": "src/cli.mjs" },
+  "scripts": {
+    "fixtures": "bash fixtures/make.sh",
+    "test": "bash fixtures/make.sh && bash tests/smoke.sh"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4",
+    "@remotion/cli": "^4",
+    "@remotion/renderer": "^4",
+    "react": "^18",
+    "react-dom": "^18",
+    "remotion": "^4"
+  },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED"
+}
