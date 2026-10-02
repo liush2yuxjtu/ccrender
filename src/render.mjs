@@ -443,16 +443,20 @@ async function finalize(b, work, st, segs, audio, outDir, log) {
 // ---------- public API ----------
 export async function exportBundle(bundlePath, {work, out, budgetSec = Infinity, segmentSec = 10, crf, preset, log = console.log} = {}) {
   const b = loadBundle(bundlePath);
+  // Audio + mux + preview are not interruptible. If this run already did work and the rest of the
+  // budget can't cover them (~27 s for a 120 s film measured, so ~0.3x film length), stop now and let
+  // the next run, which has nothing else to do, spend its whole budget on them.
+  const tailSec = Math.max(10, 0.3 * b.timeline.durationFrames / b.timeline.fps);
+  // A budget that can't cover the tail would start it anyway on the next run and overrun the call limit.
+  if (Number.isFinite(budgetSec) && budgetSec < tailSec) {
+    throw new Error(`--budget-sec ${budgetSec} is below the ~${Math.ceil(tailSec)}s that audio+mux+preview need for this film; raise it`);
+  }
   work = path.resolve(work || path.join(path.dirname(bundlePath), '.ccrender', b.renderId || 'job'));
   out = path.resolve(out || path.join(path.dirname(bundlePath), 'out'));
   fs.mkdirSync(work, {recursive: true});
   const st = new State(work, b._stateKey);
   const started = Date.now();
   const budget = {exceeded: () => (Date.now() - started) / 1000 > budgetSec, remaining: () => budgetSec - (Date.now() - started) / 1000};
-  // Audio + mux + preview are not interruptible. If this run already did work and the rest of the
-  // budget can't cover them (~27 s for a 120 s film measured, so ~0.3x film length), stop now and let
-  // the next run, which has nothing else to do, spend its whole budget on them.
-  const tailSec = Math.max(10, 0.3 * b.timeline.durationFrames / b.timeline.fps);
   const runStartDone = Object.keys(st.s.done).length;
   log(`ccrender ${RENDERER.version} · ${b.renderId} · ${b.timeline.width}x${b.timeline.height}@${b.timeline.fps} · ${(b.timeline.durationFrames / b.timeline.fps).toFixed(1)}s · run #${st.s.runs}`);
   const T = async (k, fn) => { const t0 = Date.now(); const r = await fn(); st.time('wall_' + k, (Date.now() - t0) / 1000); return r; };
