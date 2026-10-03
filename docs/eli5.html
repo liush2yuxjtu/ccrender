@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-Hans">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Live version: https://claude.ai/artifact/7yDV2CbF65aH8VfBKNpBS1 -->
+<style>body{margin:0}</style>
+<title>ccrender 渲染管线</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: a picture book. One big drawing per page, one or two short lines under it, read top to bottom. */
+:root {
+  --paper: #fbf8f2;
+  --card: #ffffff;
+  --ink: #23242b;
+  --soft: #6b6f7c;
+  --edge: #e6e1d6;
+  --cloud: #9aa6b8;
+  --chatcut: #e2453c;
+  --sandbox: #2f6fd6;
+  --drive: #1d9a63;
+  --sun: #f2b231;
+  --violet: #8a4fc7;
+  --layer0: #2a2c33;
+  --f-display: "ZCOOL KuaiLe", "Noto Sans SC", "PingFang SC", sans-serif;
+  --f-body: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #16171c; --card: #1f2128; --ink: #eceef3; --soft: #a3a8b6; --edge: #30333d; --cloud: #6d7a8f;
+  --chatcut: #ff6a5f; --sandbox: #6fa0f5; --drive: #4fcf92; --sun: #f5c25a; --violet: #c49bf0; --layer0: #0b0c0f;
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --paper: #16171c; --card: #1f2128; --ink: #eceef3; --soft: #a3a8b6; --edge: #30333d; --cloud: #6d7a8f;
+  --chatcut: #ff6a5f; --sandbox: #6fa0f5; --drive: #4fcf92; --sun: #f5c25a; --violet: #c49bf0; --layer0: #0b0c0f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 17px; line-height: 1.7; }
+.book { max-width: 760px; margin: 0 auto; padding-inline: 18px; padding-block: 36px 72px; display: grid; gap: 28px; }
+h1, h2 { font-family: var(--f-display); font-weight: 400; margin: 0; text-wrap: balance; line-height: 1.25; }
+h1 { font-size: clamp(34px, 7vw, 52px); }
+h2 { font-size: clamp(24px, 4.6vw, 32px); }
+p { margin: 0; max-width: 40ch; }
+.cover { display: grid; gap: 10px; }
+.cover p { color: var(--soft); font-size: 19px; }
+.page { background: var(--card); border: 2px solid var(--edge); border-radius: 22px; padding: 22px; display: grid; gap: 14px; }
+.page .num { font-family: var(--f-mono); font-size: 13px; color: var(--soft); }
+.page svg { width: 100%; height: auto; display: block; }
+.say { font-size: 19px; }
+.say b { font-weight: 700; }
+.small { font-size: 14px; color: var(--soft); }
+.c-chatcut { color: var(--chatcut); } .c-sandbox { color: var(--sandbox); } .c-drive { color: var(--drive); }
+svg text { font-family: var(--f-display); fill: var(--ink); }
+svg .lbl { font-size: 18px; }
+svg .sm { font-size: 14px; fill: var(--soft); font-family: var(--f-body); }
+.f-ink { fill: var(--ink); } .f-card { fill: var(--card); } .f-paper { fill: var(--paper); }
+.f-cloud { fill: var(--cloud); } .f-chatcut { fill: var(--chatcut); } .f-sandbox { fill: var(--sandbox); }
+.f-drive { fill: var(--drive); } .f-sun { fill: var(--sun); } .f-violet { fill: var(--violet); } .f-l0 { fill: var(--layer0); }
+.s-ink { stroke: var(--ink); fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.s-soft { stroke: var(--soft); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 6 6; }
+.s-card { stroke: var(--card); }
+button { font: inherit; font-family: var(--f-display); font-size: 18px; color: var(--card); background: var(--ink); border: 0; border-radius: 999px; padding: 8px 20px; cursor: pointer; justify-self: start; }
+button:focus-visible { outline: 3px solid var(--sun); outline-offset: 3px; }
+/* layer cake toggle */
+.cake .ly { transition: transform 600ms cubic-bezier(.3,1.4,.5,1); }
+.cake.stack .ly1 { transform: translateY(-46px); }
+.cake.stack .ly2 { transform: translateY(-92px); }
+.cake.stack .ly3 { transform: translateY(-138px); }
+.cake.stack .ly4 { transform: translateY(-184px); }
+.cake .tag { transition: opacity 300ms; }
+.cake.stack .tag { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .cake .ly, .cake .tag { transition: none; } }
+.end { display: grid; gap: 10px; }
+.end ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+footer { color: var(--soft); font-size: 13px; }
+footer a { color: inherit; }
+</style>
+
+<div class="book">
+  <div class="cover">
+    <h1>ccrender：让你的 AI 在自己家里剪视频</h1>
+    <p>八张图看懂一个视频是怎么做出来的。</p>
+  </div>
+
+  <!-- 1 -->
+  <div class="page">
+    <span class="num">1 / 8 · 以前</span>
+    <svg viewBox="0 0 400 200" role="img" aria-label="很多视频都送进 ChatCut 的大云工厂">
+      <g class="f-cloud"><circle cx="230" cy="90" r="52"/><circle cx="290" cy="100" r="42"/><circle cx="180" cy="110" r="38"/><rect x="180" y="100" width="150" height="48" rx="20"/></g>
+      <text x="255" y="122" text-anchor="middle" class="lbl" style="fill:var(--card)">ChatCut 云</text>
+      <g class="f-sun"><rect x="290" y="150" width="18" height="18" rx="9"/><rect x="314" y="158" width="18" height="18" rx="9"/><rect x="338" y="150" width="18" height="18" rx="9"/></g>
+      <text x="325" y="194" text-anchor="middle" class="sm">每做一个都要花钱</text>
+      <g><rect x="22" y="60" width="54" height="36" rx="6" class="f-sandbox"/><rect x="38" y="104" width="54" height="36" rx="6" class="f-sandbox"/><rect x="18" y="148" width="54" height="36" rx="6" class="f-sandbox"/></g>
+      <path class="s-ink" d="M90 80 C120 80 125 100 150 100 M100 122 L145 115 M80 165 C115 165 125 135 150 128"/>
+      <path class="s-ink" d="M140 92 l10 8 -12 5"/>
+    </svg>
+    <p class="say">以前，每个人的视频都要送到 <b class="c-chatcut">ChatCut 的大云工厂</b>里做。做一次，ChatCut 就要付一次电费。</p>
+  </div>
+
+  <!-- 2 -->
+  <div class="page">
+    <span class="num">2 / 8 · 现在</span>
+    <svg viewBox="0 0 400 200" role="img" aria-label="ChatCut 只递出一张菜谱，用户的 AI 在自己的小厨房里做">
+      <circle cx="70" cy="90" r="40" class="f-chatcut"/>
+      <rect x="48" y="128" width="44" height="50" rx="10" class="f-chatcut"/>
+      <rect x="40" y="46" width="60" height="22" rx="8" class="f-card s-card"/>
+      <text x="70" y="98" text-anchor="middle" class="lbl" style="fill:var(--card)">ChatCut</text>
+      <g transform="rotate(-6 200 100)"><rect x="160" y="60" width="80" height="96" rx="8" class="f-paper" style="stroke:var(--ink);stroke-width:3"/>
+        <path class="s-ink" style="stroke-width:2" d="M174 82 h52 M174 98 h40 M174 114 h48 M174 130 h30"/></g>
+      <text x="200" y="182" text-anchor="middle" class="sm">一张菜谱</text>
+      <path class="s-ink" d="M110 100 h40 M140 92 l10 8 -10 8 M250 100 h40 M280 92 l10 8 -10 8"/>
+      <path d="M300 110 l40 -36 40 36 v70 h-80z" class="f-sandbox"/>
+      <rect x="328" y="138" width="24" height="42" rx="4" class="f-card"/>
+      <text x="340" y="196" text-anchor="middle" class="sm">你的 AI 的小厨房</text>
+    </svg>
+    <p class="say">现在，ChatCut 只递出<b>一张菜谱</b>，上面写着“哪段视频放哪、什么时候出字”。真正动手做视频的，是<b class="c-sandbox">你的 AI 助手自己的小电脑</b>。</p>
+  </div>
+
+  <!-- 3 -->
+  <div class="page">
+    <span class="num">3 / 8 · 材料</span>
+    <svg viewBox="0 0 400 200" role="img" aria-label="原始视频从你的 Google Drive 拿到小厨房">
+      <rect x="20" y="40" width="130" height="130" rx="16" class="f-drive"/>
+      <rect x="34" y="56" width="102" height="30" rx="6" class="f-card"/><rect x="34" y="94" width="102" height="30" rx="6" class="f-card"/><rect x="34" y="132" width="102" height="30" rx="6" class="f-card"/>
+      <path class="f-drive" d="M60 64 l10 7 -10 7z M60 102 l10 7 -10 7z M60 140 l10 7 -10 7z"/>
+      <text x="85" y="28" text-anchor="middle" class="lbl">你的 Google Drive</text>
+      <path class="s-ink" d="M160 105 h80 M230 97 l10 8 -10 8"/>
+      <text x="200" y="92" text-anchor="middle" class="sm">一把临时钥匙</text>
+      <g transform="translate(176 118)"><circle cx="8" cy="8" r="8" class="f-sun"/><rect x="14" y="5" width="24" height="6" class="f-sun"/><rect x="30" y="11" width="4" height="6" class="f-sun"/></g>
+      <path d="M260 110 l60 -54 60 54 v70 h-120z" class="f-sandbox"/>
+      <text x="320" y="150" text-anchor="middle" class="lbl" style="fill:var(--card)">小厨房</text>
+    </svg>
+    <p class="say">做菜要材料。你拍的原始视频放在<b class="c-drive">你自己的 Google Drive</b> 里。ChatCut 给 AI 一把<b>很快就过期的钥匙</b>，只能开这一个项目的门。</p>
+    <p class="small">钥匙现在放在环境变量里，用完就没了，不会写进任何文件。</p>
+  </div>
+
+  <!-- 4 -->
+  <div class="page">
+    <span class="num">4 / 8 · 叠起来</span>
+    <svg viewBox="0 0 400 270" role="img" aria-label="视频的一帧像五层蛋糕叠起来：黑底、主画面、小窗、动画字、字幕" class="cake" id="cake">
+      <g class="ly ly0"><path d="M90 230 l110 -30 110 30 -110 30z" class="f-l0"/></g>
+      <g class="ly ly1"><path d="M90 230 l110 -30 110 30 -110 30z" class="f-sandbox" opacity=".9"/></g>
+      <g class="ly ly2"><path d="M90 230 l110 -30 110 30 -110 30z" fill="none" stroke="var(--soft)" stroke-width="2" stroke-dasharray="4 4"/><path d="M200 214 l46 12 -30 9 -46 -12z" class="f-drive"/></g>
+      <g class="ly ly3"><path d="M90 230 l110 -30 110 30 -110 30z" fill="none" stroke="var(--soft)" stroke-width="2" stroke-dasharray="4 4"/><path d="M118 234 l60 -16 18 5 -60 16z" class="f-violet"/></g>
+      <g class="ly ly4"><path d="M90 230 l110 -30 110 30 -110 30z" fill="none" stroke="var(--soft)" stroke-width="2" stroke-dasharray="4 4"/><path d="M168 244 l64 -17 12 3 -64 17z" class="f-sun"/></g>
+      <g class="tag">
+        <text x="330" y="236" class="sm">黑底</text>
+        <text x="330" y="196" class="sm">主画面</text>
+        <text x="330" y="150" class="sm">小窗</text>
+        <text x="330" y="104" class="sm">动画字</text>
+        <text x="330" y="58" class="sm">字幕</text>
+      </g>
+    </svg>
+    <button type="button" id="cake-btn">叠起来</button>
+    <p class="say">视频的每一帧都像<b>一块千层蛋糕</b>：黑底在最下面，然后是主画面、角上的小窗、会动的标题，最上面是字幕。一层一层叠好，就是你看到的画面。</p>
+    <p class="small">普通的层用 ffmpeg 叠，很快。只有会动的标题要开浏览器画，画成透明图片再叠上去。</p>
+  </div>
+
+  <!-- 5 -->
+  <div class="page">
+    <span class="num">5 / 8 · 切块</span>
+    <svg viewBox="0 0 400 180" role="img" aria-label="视频切成 10 秒一块，做完一块打一个勾，没做完的地方夹书签">
+      <rect x="20" y="60" width="110" height="60" rx="10" class="f-sandbox"/>
+      <rect x="145" y="60" width="110" height="60" rx="10" class="f-sandbox"/>
+      <rect x="270" y="60" width="110" height="60" rx="10" fill="none" stroke="var(--sandbox)" stroke-width="3" stroke-dasharray="8 6"/>
+      <path d="M58 92 l12 12 22 -24" stroke="var(--card)" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M183 92 l12 12 22 -24" stroke="var(--card)" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M258 40 h18 v52 l-9 -8 -9 8z" class="f-chatcut"/>
+      <text x="75" y="146" text-anchor="middle" class="sm">0–10 秒</text>
+      <text x="200" y="146" text-anchor="middle" class="sm">10–20 秒</text>
+      <text x="325" y="146" text-anchor="middle" class="sm">20–30 秒</text>
+      <text x="267" y="28" text-anchor="middle" class="lbl">书签</text>
+    </svg>
+    <p class="say">小电脑力气小，还会被“下课铃”打断。所以把视频<b>切成 10 秒一块</b>，做完一块就打个勾。</p>
+    <p class="say">铃响了？夹个<b class="c-chatcut">书签</b>。下次把同样的命令再跑一遍，就从书签那儿接着做。</p>
+    <p class="small">书签就是 state.json；“铃响了”就是退出码 75。最后的声音和打包这一步不能中途停，所以剩的时间不够时，会提前夹书签，留到下次一口气做完。</p>
+  </div>
+
+  <!-- 6 -->
+  <div class="page">
+    <span class="num">6 / 8 · 声音</span>
+    <svg viewBox="0 0 400 190" role="img" aria-label="有人说话时音乐自动变小，说完音乐又变大">
+      <text x="20" y="40" class="lbl">说话</text>
+      <rect x="90" y="22" width="190" height="24" rx="12" class="f-sandbox"/>
+      <text x="20" y="110" class="lbl">音乐</text>
+      <path d="M90 86 h190 v40 h-190z" class="f-drive" opacity=".35"/>
+      <path d="M90 116 h190 v10 h-190z" class="f-drive"/>
+      <path d="M280 76 h100 v50 h-100z" class="f-drive"/>
+      <path class="s-soft" d="M280 18 v150"/>
+      <text x="185" y="160" text-anchor="middle" class="sm">有人说话，音乐变小</text>
+      <text x="330" y="160" text-anchor="middle" class="sm">说完了，音乐回来</text>
+    </svg>
+    <p class="say">声音也要调好：<b>有人说话时，背景音乐自己变小</b>；说完了，音乐再慢慢变回来，不会突然断掉。</p>
+  </div>
+
+  <!-- 7 -->
+  <div class="page">
+    <span class="num">7 / 8 · 送回去</span>
+    <svg viewBox="0 0 400 190" role="img" aria-label="做好的视频放回 Drive，再给 ChatCut 一张带指纹的收据">
+      <path d="M20 100 l50 -45 50 45 v70 h-100z" class="f-sandbox"/>
+      <rect x="160" y="40" width="80" height="54" rx="8" class="f-sun"/>
+      <path d="M190 55 l18 12 -18 12z" class="f-card"/>
+      <text x="200" y="116" text-anchor="middle" class="sm">做好的视频</text>
+      <path class="s-ink" d="M130 70 h22 M245 70 h40 M276 62 l10 8 -10 8"/>
+      <rect x="292" y="30" width="90" height="80" rx="14" class="f-drive"/>
+      <text x="337" y="76" text-anchor="middle" class="lbl" style="fill:var(--card)">Drive</text>
+      <rect x="160" y="130" width="80" height="50" rx="6" class="f-paper" style="stroke:var(--ink);stroke-width:2.5"/>
+      <path class="s-ink" style="stroke-width:2" d="M172 146 h40 M172 160 h28"/>
+      <circle cx="222" cy="166" r="8" class="f-chatcut"/>
+      <path class="s-ink" d="M245 155 h50 M286 147 l10 8 -10 8"/>
+      <circle cx="335" cy="155" r="24" class="f-chatcut"/>
+      <text x="335" y="161" text-anchor="middle" class="sm" style="fill:var(--card)">ChatCut</text>
+    </svg>
+    <p class="say">做好的视频放回<b class="c-drive">你的 Drive</b>。再给 ChatCut 一张<b>收据</b>，上面有这个视频的“指纹”，谁也没法偷偷换掉。</p>
+    <p class="small">收据就是 export-manifest.json，指纹是 sha256。</p>
+  </div>
+
+  <!-- 8 -->
+  <div class="page">
+    <span class="num">8 / 8 · 有多快</span>
+    <svg viewBox="0 0 400 170" role="img" aria-label="2 分钟的视频 142 秒做完">
+      <text x="20" y="44" class="lbl">视频长度</text>
+      <rect x="130" y="24" width="200" height="28" rx="14" class="f-sandbox"/>
+      <text x="230" y="44" text-anchor="middle" class="lbl" style="fill:var(--card)">120 秒</text>
+      <text x="20" y="104" class="lbl">做完用了</text>
+      <rect x="130" y="84" width="237" height="28" rx="14" class="f-sun"/>
+      <text x="248" y="104" text-anchor="middle" class="lbl" style="fill:var(--layer0)">142 秒</text>
+      <text x="20" y="150" class="sm">一台只有 2 个核的小电脑，差不多“拍多长、做多久”。</text>
+    </svg>
+    <p class="say">一台很小的电脑，<b>2 分钟的视频大约 2 分半做完</b>。查看某一帧对不对，不到半秒。</p>
+  </div>
+
+  <div class="end">
+    <h2>一句话记住</h2>
+    <p class="say">ChatCut 写菜谱，你的 AI 在自己的厨房做菜，材料和成品都放在你自己的冰箱（Drive）里。</p>
+    <ul class="small">
+      <li>这是设计提案和原型，与 ChatCut Inc. 无隶属关系。</li>
+      <li>还没用真实 Google 账号测过 Drive 上传下载。</li>
+    </ul>
+  </div>
+
+  <footer>来自仓库 liush2yuxjtu/ccrender。想看细节：docs/DESIGN.md、contract/types.ts、src/render.mjs。</footer>
+</div>
+
+<script>
+(function () {
+  var cake = document.getElementById('cake'), btn = document.getElementById('cake-btn');
+  btn.addEventListener('click', function () {
+    var on = cake.classList.toggle('stack');
+    btn.textContent = on ? '拆开看' : '叠起来';
+  });
+})();
+</script>
+</html>

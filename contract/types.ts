@@ -14,7 +14,13 @@ export interface RenderCapabilities {
 }
 
 // ---- 2. get_render_bundle: ChatCut -> sandbox ---------------------------------
-// MCP tool (new): get_render_bundle({projectId, timelineId, range?, preset})
+// MCP tool (new): get_render_bundle({projectId, timelineId, range?, preset}) -> GetRenderBundleResult
+// The Drive token travels next to the bundle, not inside it: the agent writes bundle.json to disk
+// and passes the token to ccrender as env CCRENDER_DRIVE_TOKEN, so it never lands in a file.
+export interface GetRenderBundleResult {
+  bundle: RenderBundle;
+  driveToken?: { accessToken: string; expiresAt: string };   // drive.file scope, this project only
+}
 export interface RenderBundle {
   version: 'render-bundle/0.1';
   renderId: string; projectId: string; timelineId: string;
@@ -26,7 +32,7 @@ export interface RenderBundle {
   output: { format: 'mp4'; codec: 'h264'; crf?: number };
   storage: {
     inputs: 'local' | 'drive';
-    drive?: { accessToken: string | null; folderId: string | null }; // short-lived, drive.file scope, this project only
+    drive?: { folderId: string | null; /** @deprecated use GetRenderBundleResult.driveToken */ accessToken?: string | null };
   };
 }
 export interface Asset { type: 'video' | 'audio' | 'image'; src: string /* path | https:// | drive://<fileId> */; ext?: string }
