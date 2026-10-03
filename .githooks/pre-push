@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Full /verify before anything leaves the machine (smoke render + CLI checks, ~2-3 min;
+# live Drive too when its env vars are set). Skip once with `git push --no-verify`.
+exec bash "$(git rev-parse --show-toplevel)/tests/verify.sh"

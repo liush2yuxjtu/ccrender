@@ -1,14 +1,28 @@
 #!/usr/bin/env bash
-# Full verification: npm test + CLI behaviour checks + optional live Google Drive round trip.
-# Drive part runs only when CCRENDER_DRIVE_TOKEN and CCRENDER_TEST_DRIVE_FILE (an image fileId) are set;
-# CCRENDER_TEST_DRIVE_FOLDER (optional) is where the upload lands.
+# Verification, cheapest checks first so a mistake fails in seconds, not after a render:
+#   1. fast   syntax of every script + unit tests (~2 s)       <- `--fast` stops here (pre-commit hook)
+#   2. smoke  render the demo bundle and check the output (~1-2 min)
+#   3. CLI    budgeted resume, proof-frame run count, argument errors
+#   4. Drive  live download/upload, only when CCRENDER_DRIVE_TOKEN and CCRENDER_TEST_DRIVE_FILE
+#             (an image fileId) are set; CCRENDER_TEST_DRIVE_FOLDER (optional) is where the upload lands.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 fail=0
 check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fail=1; fi; }
 
-echo "== npm test"
-npm test --silent || fail=1
+echo "== fast checks"
+for f in src/*.mjs tests/*.mjs mg/*.jsx; do
+  case "$f" in *.jsx) continue ;; esac  # JSX is checked by the Remotion bundler in the smoke stage
+  node --check "$f" || { echo "FAIL syntax $f"; fail=1; }
+done
+for f in tests/*.sh fixtures/*.sh .githooks/*; do [ -f "$f" ] && { bash -n "$f" || { echo "FAIL syntax $f"; fail=1; }; }; done
+[ $fail = 0 ] && echo "PASS syntax"
+node tests/unit.mjs || fail=1
+if [ $fail != 0 ]; then echo "SOME CHECKS FAILED (fast stage; slower stages skipped)"; exit 1; fi
+if [ "${1:-}" = "--fast" ]; then echo "ALL PASS (fast)"; exit 0; fi
+
+echo "== smoke render"
+{ bash fixtures/make.sh && bash tests/smoke.sh; } || fail=1
 
 echo "== CLI behaviour"
 cd examples

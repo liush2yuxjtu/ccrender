@@ -18,6 +18,8 @@ ChatCut MCP  register_export(out/export-manifest.json)
 ## Quick start
 ```sh
 npm i && npm test        # makes synthetic fixtures, renders the demo, runs 5 checks (~2 min)
+npm run test:fast       # syntax + unit tests, ~2 s (also the pre-commit hook; `npm i` enables .githooks)
+npm run verify          # full /verify: fast -> smoke render -> CLI checks -> live Drive if env set (pre-push hook)
 ```
 
 ## Commands

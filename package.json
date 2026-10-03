@@ -6,7 +6,10 @@
   "bin": { "ccrender": "src/cli.mjs" },
   "scripts": {
     "fixtures": "bash fixtures/make.sh",
-    "test": "node tests/unit.mjs && bash fixtures/make.sh && bash tests/smoke.sh"
+    "test": "node tests/unit.mjs && bash fixtures/make.sh && bash tests/smoke.sh",
+    "test:fast": "bash tests/verify.sh --fast",
+    "verify": "bash tests/verify.sh",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
     "@remotion/bundler": "^4",

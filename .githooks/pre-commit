@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Shift-left gate: syntax + unit tests on every commit (~2 s). Skip once with `git commit --no-verify`.
+exec bash "$(git rev-parse --show-toplevel)/tests/verify.sh" --fast
